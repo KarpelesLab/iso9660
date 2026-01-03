@@ -1,7 +1,8 @@
 package iso9660
 
 import (
-	"io/ioutil"
+	"io"
+	"io/fs"
 	"os"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ func TestImageReader(t *testing.T) {
 	tz := time.FixedZone("", 3600*2)
 	recordTime := time.Date(2018, 07, 25, 22, 01, 02, 0, tz)
 
-	f, err := os.Open("fixtures/test.iso")
+	f, err := os.Open("testdata/test.iso")
 	assert.NoError(t, err)
 	defer f.Close() // nolint: errcheck
 
@@ -56,7 +57,7 @@ func TestImageReader(t *testing.T) {
 		assert.Equal(t, "LOREM_IP.TXT", loremFile.Name())
 		assert.Equal(t, int64(446), loremFile.Size())
 
-		data, err := ioutil.ReadAll(loremFile.Reader())
+		data, err := io.ReadAll(loremFile.Reader())
 		assert.NoError(t, err)
 
 		assert.Equal(t, loremIpsum, string(data))
@@ -86,4 +87,147 @@ func TestImageReader(t *testing.T) {
 		assert.Len(t, dir4Children, 1000)
 		assert.Equal(t, "FILE1012", dir4Children[12].Name())
 	}
+}
+
+func TestImageReaderLabel(t *testing.T) {
+	f, err := os.Open("testdata/test.iso")
+	assert.NoError(t, err)
+	defer f.Close()
+
+	image, err := OpenImage(f)
+	assert.NoError(t, err)
+
+	label, err := image.Label()
+	assert.NoError(t, err)
+	assert.Equal(t, "my-vol-id", label)
+}
+
+func TestImageReaderNoVolumes(t *testing.T) {
+	imageWithoutDescriptors := Image{
+		ra:                nil,
+		volumeDescriptors: []volumeDescriptor{},
+	}
+
+	_, err := imageWithoutDescriptors.RootDir()
+	assert.Error(t, err)
+
+	_, err = imageWithoutDescriptors.Label()
+	assert.Error(t, err)
+}
+
+func TestFileMode(t *testing.T) {
+	f := File{
+		ra: nil,
+		de: &DirectoryEntry{
+			FileFlags: dirFlagDir,
+		},
+		children: []*File{},
+	}
+
+	assert.Nil(t, f.Reader())
+	assert.Equal(t, os.ModeDir, f.Mode())
+}
+
+func TestImageReaderRockRidge(t *testing.T) {
+	f, err := os.Open("testdata/test_rockridge.iso")
+	assert.NoError(t, err)
+	defer f.Close()
+
+	image, err := OpenImage(f)
+	assert.NoError(t, err)
+
+	// root dir
+	rootDir, err := image.RootDir()
+	assert.NoError(t, err)
+
+	rootDot, err := rootDir.GetDotEntry()
+	assert.NoError(t, err)
+
+	ers, err := rootDot.de.SystemUseEntries.GetExtensionRecords()
+	assert.NoError(t, err)
+
+	// has Rock Ridge
+	if assert.Len(t, ers, 1) {
+		assert.Equal(t, "RRIP_1991A", ers[0].Identifier)
+		assert.Equal(t, 1, ers[0].Version)
+	}
+
+	children, err := rootDir.GetChildren()
+	assert.NoError(t, err)
+	assert.Len(t, children, 5)
+
+	// symlink
+	symlink := children[4]
+	assert.Equal(t, "this-is-a-symlink", symlink.Name())
+	assert.Equal(t, os.ModeSymlink, symlink.Mode()&os.ModeSymlink)
+
+	dir1 := children[1]
+	assert.Equal(t, "dir1", dir1.Name())
+
+	dir1Children, err := dir1.GetChildren()
+	assert.NoError(t, err)
+	assert.Len(t, dir1Children, 1)
+
+	// lorem ipsum with Rock Ridge long filename and permissions
+	loremFile := dir1Children[0]
+	assert.Equal(t, "lorem_ipsum.txt", loremFile.Name())
+	assert.Equal(t, int64(446), loremFile.Size())
+	assert.Equal(t, fs.FileMode(0640), loremFile.Mode().Perm(), "expected mode %o, got %o", 0640, loremFile.Mode().Perm())
+	assert.NotNil(t, loremFile.susp)
+	assert.True(t, loremFile.susp.HasRockRidge)
+
+	data, err := io.ReadAll(loremFile.Reader())
+	assert.NoError(t, err)
+	assert.Equal(t, loremIpsum, string(data))
+
+	// verify SUSP entries are parsed
+	assert.Len(t, loremFile.de.SystemUseEntries, 4)
+	assert.Equal(t, "RR", loremFile.de.SystemUseEntries[0].Type())
+	assert.Equal(t, "PX", loremFile.de.SystemUseEntries[2].Type())
+	assert.Equal(t, "TF", loremFile.de.SystemUseEntries[3].Type())
+}
+
+func TestGetAllChildren(t *testing.T) {
+	f, err := os.Open("testdata/test.iso")
+	assert.NoError(t, err)
+	defer f.Close()
+
+	image, err := OpenImage(f)
+	assert.NoError(t, err)
+
+	rootDir, err := image.RootDir()
+	assert.NoError(t, err)
+
+	// GetAllChildren should include . and .. entries
+	allChildren, err := rootDir.GetAllChildren()
+	assert.NoError(t, err)
+
+	// GetChildren should exclude . and .. entries
+	children, err := rootDir.GetChildren()
+	assert.NoError(t, err)
+
+	// All children should have 2 more entries (. and ..)
+	assert.Equal(t, len(allChildren), len(children)+2)
+}
+
+func TestFileNotDirectory(t *testing.T) {
+	f, err := os.Open("testdata/test.iso")
+	assert.NoError(t, err)
+	defer f.Close()
+
+	image, err := OpenImage(f)
+	assert.NoError(t, err)
+
+	rootDir, err := image.RootDir()
+	assert.NoError(t, err)
+
+	children, err := rootDir.GetChildren()
+	assert.NoError(t, err)
+
+	// cicero.txt is a file, not a directory
+	cicero := children[0]
+	assert.False(t, cicero.IsDir())
+
+	_, err = cicero.GetChildren()
+	assert.Error(t, err)
 }

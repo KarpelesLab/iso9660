@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -188,6 +189,38 @@ func (iw *ImageWriter) AddLocalFile(localPath, filePath string) error {
 	}
 
 	return iw.AddFile(buf, filePath)
+}
+
+// AddLocalDirectory adds a directory recursively to the ImageWriter.
+// origin is the path to the local directory, and target is the path on the ISO image.
+func (iw *ImageWriter) AddLocalDirectory(origin, target string) error {
+	f, err := os.Open(origin)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	fileinfo, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	if !fileinfo.IsDir() {
+		return fmt.Errorf("%q is not a directory", origin)
+	}
+
+	walkfn := func(filePath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		relPath := filePath[len(origin):]
+		return iw.AddLocalFile(filePath, path.Join(target, relPath))
+	}
+
+	return filepath.Walk(origin, walkfn)
 }
 
 func recursiveDirSectorCount(dir *itemDir) uint32 {
@@ -441,7 +474,7 @@ func (wc *writeContext) writeDescriptor(pvd *volumeDescriptor, sector uint32) er
 	}
 }
 
-func (iw *ImageWriter) WriteTo(w io.Writer) error {
+func (iw *ImageWriter) WriteTo(w io.Writer) (int64, error) {
 	vd := iw.vd
 	var (
 		err error
@@ -462,7 +495,7 @@ func (iw *ImageWriter) WriteTo(w io.Writer) error {
 		// add boot catalog
 		err = iw.AddFile(bootCatInfo, iw.Catalog)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		vd = append(vd, &volumeDescriptor{
@@ -499,7 +532,7 @@ func (iw *ImageWriter) WriteTo(w io.Writer) error {
 
 	// processAll() will prepare the data to be written, including offsets, etc.
 	if err = wc.processAll(); err != nil {
-		return fmt.Errorf("writing files: %s", err)
+		return 0, fmt.Errorf("writing files: %s", err)
 	}
 
 	if len(iw.boot) > 0 {
@@ -510,7 +543,7 @@ func (iw *ImageWriter) WriteTo(w io.Writer) error {
 		// generate catalog
 		data, err := encodeBootCatalogs(iw.boot)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		// overwrite bootCat with data so it will be written to disk
@@ -520,14 +553,14 @@ func (iw *ImageWriter) WriteTo(w io.Writer) error {
 	// write 16 sectors of zeroes
 	for i := uint32(0); i < 16; i++ {
 		if err = wc.writeSector(wc.emptySector, i); err != nil {
-			return err
+			return int64(wc.writeSecPos) * int64(sectorSize), err
 		}
 	}
 
 	// write volume descriptors
 	for i, pvd := range vd {
 		if err = wc.writeDescriptor(pvd, uint32(16+i)); err != nil {
-			return err
+			return int64(wc.writeSecPos) * int64(sectorSize), err
 		}
 	}
 
@@ -535,10 +568,10 @@ func (iw *ImageWriter) WriteTo(w io.Writer) error {
 	for _, buf := range wc.items {
 		err = wc.writeSectorBuf(buf)
 		if err != nil {
-			return err
+			return int64(wc.writeSecPos) * int64(sectorSize), err
 		}
 		buf.Close()
 	}
 
-	return nil
+	return int64(wc.writeSecPos) * int64(sectorSize), nil
 }

@@ -26,8 +26,6 @@ const (
 	volumeTypePartition     byte = 3
 	volumeTypeTerminator    byte = 255
 
-	volumeDescriptorBodySize = sectorSize - 7
-
 	aCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_!\"%&'()*+,-./:;<=>?"
 	dCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
 )
@@ -132,6 +130,7 @@ type DirectoryEntry struct {
 	VolumeSequenceNumber         int16
 	Identifier                   string
 	SystemUse                    []byte
+	SystemUseEntries             SystemUseEntrySlice // parsed SUSP entries
 }
 
 var _ encoding.BinaryUnmarshaler = &DirectoryEntry{}

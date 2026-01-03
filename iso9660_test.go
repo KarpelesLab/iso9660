@@ -72,7 +72,7 @@ func TestReadWriteRecordingTimestamp(t *testing.T) {
 }
 
 func TestReadWriteDirectoryEntry(t *testing.T) {
-	f, err := os.Open("fixtures/test.iso")
+	f, err := os.Open("testdata/test.iso")
 	assert.NoError(t, err)
 	defer f.Close() // nolint:errcheck
 
@@ -91,7 +91,7 @@ func TestReadWriteDirectoryEntry(t *testing.T) {
 }
 
 func TestReadWriteVolumeDescriptorPrimary(t *testing.T) {
-	f, err := os.Open("fixtures/test.iso")
+	f, err := os.Open("testdata/test.iso")
 	assert.NoError(t, err)
 	defer f.Close() // nolint:errcheck
 

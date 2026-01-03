@@ -1,7 +1,7 @@
 package iso9660
 
 import (
-	"io/ioutil"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -77,7 +77,7 @@ func TestWriterStaging(t *testing.T) {
 	err = w.AddFile(r, testFilePath)
 	assert.NoError(t, err)
 
-	readData, err := ioutil.ReadFile(path.Join(w.stagingDir, testFileMangledPath))
+	readData, err := os.ReadFile(path.Join(w.stagingDir, testFileMangledPath))
 	assert.NoError(t, err)
 
 	assert.Equal(t, testFileContents, string(readData))
@@ -91,19 +91,19 @@ func TestWriter(t *testing.T) {
 	err = w.AddFile(strings.NewReader("hrh2309hr320h"), "someDirectoryPath/dir1/somefile.dat")
 	assert.NoError(t, err)
 
-	largeFileData, err := ioutil.ReadFile("fixtures/test.iso_source/dir2/large.txt")
+	largeFileData, err := os.ReadFile("testdata/test.iso_source/dir2/large.txt")
 	assert.NoError(t, err)
 
-	err = w.AddLocalFile("fixtures/test.iso_source/dir2/large.txt", "anotherDir/large.txt")
+	err = w.AddLocalFile("testdata/test.iso_source/dir2/large.txt", "anotherDir/large.txt")
 	assert.NoError(t, err)
 
-	f, err := ioutil.TempFile(os.TempDir(), "iso9660_golang_test")
+	f, err := os.CreateTemp(os.TempDir(), "iso9660_golang_test")
 	assert.NoError(t, err)
 	defer os.Remove(f.Name())
 
 	imageFileName := f.Name()
 
-	err = w.WriteTo(f)
+	_, err = w.WriteTo(f)
 	assert.NoError(t, err)
 
 	f.Close() // nolint: errcheck
@@ -127,7 +127,7 @@ func TestWriter(t *testing.T) {
 	assert.Len(t, children, 1)
 	assert.Equal(t, "LARGE.TXT", children[0].Name())
 
-	readData, err := ioutil.ReadAll(children[0].Reader())
+	readData, err := io.ReadAll(children[0].Reader())
 	assert.NoError(t, err)
 
 	assert.Equal(t, largeFileData, readData)
