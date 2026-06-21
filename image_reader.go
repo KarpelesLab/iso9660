@@ -158,6 +158,11 @@ func (f *File) Size() int64 {
 	return int64(f.de.ExtentLength)
 }
 
+// DataOffset returns the offset, in bytes, of the file's data within the ISO image.
+func (f *File) DataOffset() int64 {
+	return int64(f.de.ExtentLocation) * int64(sectorSize)
+}
+
 // Sys returns nil
 func (f *File) Sys() interface{} {
 	return nil

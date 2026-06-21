@@ -558,7 +558,9 @@ func (ts *RecordingTimestamp) UnmarshalBinary(data []byte) error {
 	hour := int(data[3])
 	min := int(data[4])
 	sec := int(data[5])
-	tzOffset := int(data[6])
+	// the timezone offset is a signed byte (number of 15-minute intervals
+	// from GMT), so negative offsets (western timezones) must be sign-extended
+	tzOffset := int(int8(data[6]))
 	secondsInAQuarter := 60 * 15
 
 	tz := time.FixedZone("", tzOffset*secondsInAQuarter)
