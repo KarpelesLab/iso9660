@@ -182,7 +182,7 @@ func (f *File) GetAllChildren() ([]*File, error) {
 	baseOffset := uint32(f.de.ExtentLocation) * sectorSize
 
 	buffer := make([]byte, sectorSize)
-	for bytesProcessed := uint32(0); bytesProcessed < uint32(f.de.ExtentLength); bytesProcessed += sectorSize {
+	for bytesProcessed := uint32(0); bytesProcessed < f.de.ExtentLength; bytesProcessed += sectorSize {
 		if _, err := f.ra.ReadAt(buffer, int64(baseOffset+bytesProcessed)); err != nil {
 			return nil, nil
 		}

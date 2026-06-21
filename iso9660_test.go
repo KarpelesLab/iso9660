@@ -108,3 +108,12 @@ func TestReadWriteVolumeDescriptorPrimary(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, buffer1, buffer2)
 }
+
+func TestVolumeDescriptorUDF(t *testing.T) {
+	data := make([]byte, sectorSize)
+	copy(data[1:6], []byte(udfIdentifier))
+
+	var vd volumeDescriptor
+	err := vd.UnmarshalBinary(data)
+	assert.ErrorIs(t, err, ErrUDFNotSupported)
+}

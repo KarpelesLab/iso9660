@@ -18,6 +18,7 @@ import (
 const (
 	sectorSize         uint32 = 2048
 	systemAreaSize            = sectorSize * 16
+	udfIdentifier             = "BEA01"
 	standardIdentifier        = "CD001"
 
 	volumeTypeBoot          byte = 0
@@ -42,6 +43,10 @@ const (
 )
 
 var standardIdentifierBytes = [5]byte{'C', 'D', '0', '0', '1'}
+
+// ErrUDFNotSupported is returned when attempting to read a UDF volume, which is
+// a different filesystem from ISO 9660 and is not supported by this package.
+var ErrUDFNotSupported = errors.New("UDF volumes are not supported")
 
 // volumeDescriptorHeader represents the data in bytes 0-6
 // of a Volume Descriptor as defined in ECMA-119 8.1
@@ -122,7 +127,7 @@ var _ encoding.BinaryMarshaler = PrimaryVolumeDescriptorBody{}
 type DirectoryEntry struct {
 	ExtendedAtributeRecordLength byte
 	ExtentLocation               int32
-	ExtentLength                 int32
+	ExtentLength                 uint32
 	RecordingDateTime            RecordingTimestamp
 	FileFlags                    byte
 	FileUnitSize                 byte
@@ -151,7 +156,7 @@ func (de *DirectoryEntry) UnmarshalBinary(data []byte) error {
 		return err
 	}
 
-	if de.ExtentLength, err = UnmarshalInt32LSBMSB(data[10:18]); err != nil {
+	if de.ExtentLength, err = UnmarshalUint32LSBMSB(data[10:18]); err != nil {
 		return err
 	}
 
@@ -192,7 +197,7 @@ func (de *DirectoryEntry) MarshalBinary() ([]byte, error) {
 	data[1] = de.ExtendedAtributeRecordLength
 
 	WriteInt32LSBMSB(data[2:10], de.ExtentLocation)
-	WriteInt32LSBMSB(data[10:18], de.ExtentLength)
+	WriteInt32LSBMSB(data[10:18], int32(de.ExtentLength))
 	de.RecordingDateTime.MarshalBinary(data[18:25])
 	data[25] = de.FileFlags
 	data[26] = de.FileUnitSize
@@ -409,8 +414,11 @@ func (vd *volumeDescriptor) UnmarshalBinary(data []byte) error {
 		return err
 	}
 
-	if string(vd.Header.Identifier[:]) != standardIdentifier {
-		return fmt.Errorf("volume descriptor %q != %q", string(vd.Header.Identifier[:]), standardIdentifier)
+	if id := string(vd.Header.Identifier[:]); id != standardIdentifier {
+		if id == udfIdentifier {
+			return ErrUDFNotSupported
+		}
+		return fmt.Errorf("volume descriptor %q != %q", id, standardIdentifier)
 	}
 
 	switch vd.Header.Type {

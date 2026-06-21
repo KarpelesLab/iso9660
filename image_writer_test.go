@@ -3,6 +3,7 @@ package iso9660
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -131,4 +132,18 @@ func TestWriter(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, largeFileData, readData)
+}
+
+func TestWriterAddSymlink(t *testing.T) {
+	w, err := NewWriter()
+	assert.NoError(t, err)
+
+	tmpdir := t.TempDir()
+	symlinkPath := filepath.Join(tmpdir, "symlink")
+	if err := os.Symlink("/etc/hosts", symlinkPath); err != nil {
+		t.Skipf("symlinks not supported on this platform: %v", err)
+	}
+
+	err = w.AddLocalFile(symlinkPath, "foo")
+	assert.ErrorContains(t, err, "is a symlink - these are not yet supported")
 }

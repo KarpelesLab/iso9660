@@ -183,12 +183,32 @@ func (iw *ImageWriter) AddFile(data io.Reader, filePath string) error {
 // localPath must be an existing and readable file, and filePath will be the path
 // on the ISO image.
 func (iw *ImageWriter) AddLocalFile(localPath, filePath string) error {
+	if err := failIfSymlink(localPath); err != nil {
+		return err
+	}
+
 	buf, err := NewItemFile(localPath)
 	if err != nil {
 		return fmt.Errorf("unable to add local file: %w", err)
 	}
 
 	return iw.AddFile(buf, filePath)
+}
+
+// failIfSymlink returns an error if path points to a symbolic link. Symlinks
+// are not followed silently: writing the link target's contents under the
+// link's name would be surprising, so callers must handle them explicitly.
+func failIfSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%q is a symlink - these are not yet supported", path)
+	}
+
+	return nil
 }
 
 // AddLocalDirectory adds a directory recursively to the ImageWriter.
@@ -216,7 +236,9 @@ func (iw *ImageWriter) AddLocalDirectory(origin, target string) error {
 		if info.IsDir() {
 			return nil
 		}
-		relPath := filePath[len(origin):]
+		// filepath.Walk yields OS-native paths; normalize separators so the
+		// in-image path is correct on Windows (no-op on slash-based systems).
+		relPath := filepath.ToSlash(filePath[len(origin):])
 		return iw.AddLocalFile(filePath, path.Join(target, relPath))
 	}
 
@@ -267,7 +289,7 @@ func (wc *writeContext) createDEForRoot() (*DirectoryEntry, error) {
 	de := &DirectoryEntry{
 		ExtendedAtributeRecordLength: 0,
 		ExtentLocation:               int32(extentLocation),
-		ExtentLength:                 int32(extentLengthInSectors * sectorSize),
+		ExtentLength:                 uint32(extentLengthInSectors * sectorSize),
 		RecordingDateTime:            wc.timestamp,
 		FileFlags:                    dirFlagDir,
 		FileUnitSize:                 0, // 0 for non-interleaved write
@@ -343,7 +365,7 @@ func (wc *writeContext) processDirectory(dir *itemDir, ownEntry *DirectoryEntry,
 			de = &DirectoryEntry{
 				ExtendedAtributeRecordLength: 0,
 				ExtentLocation:               int32(extentLocation),
-				ExtentLength:                 int32(extentLength),
+				ExtentLength:                 uint32(extentLength),
 				RecordingDateTime:            wc.timestamp,
 				FileFlags:                    fileFlags,
 				FileUnitSize:                 0, // 0 for non-interleaved write
